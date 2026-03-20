@@ -2105,6 +2105,46 @@ class SearchService:
         else:
             # 默认主查询：股票名称 + 核心关键词
             query = f"{stock_name} {stock_code} 股票 最新消息"
+        # === AkShare A-Share Intercept Start (Auto-injected by GitHub Actions) ===
+        if not is_foreign and not focus_keywords:
+            import akshare as ak
+            code = "".join(filter(str.isdigit, stock_code))
+            if len(code) == 6:
+                logger.info(f"🧬 [AkShare-Priority] 拦截 A 股搜索: {stock_name}({code})")
+                try:
+                    df = ak.stock_news_em(symbol=code)
+                    ak_results = []
+                    if not df.empty:
+                        for _, r in df.head(max_results + 5).iterrows():
+                            # 使用新版定义的 SearchResult 类
+                            ak_results.append(SearchResult(
+                                title=str(r.iloc[0]),
+                                snippet=f"来自东方财富的实时异动：{r.iloc[0]}",
+                                url=f"https://mguba.eastmoney.com/mguba/article/0/{code}",
+                                source="EastMoney",
+                                published_date=str(r.iloc[1])
+                            ))
+                    if ak_results:
+                        resp = SearchResponse(
+                            query=query,
+                            results=ak_results,
+                            provider="AkShare-Internal",
+                            success=True
+                        )
+                        # 利用新版自带的过滤和缓存逻辑
+                        filtered_resp = self._filter_news_response(
+                            resp, 
+                            search_days=search_days, 
+                            max_results=max_results,
+                            log_scope=f"{stock_code}:AkShare:stock_news"
+                        )
+                        if filtered_resp.results:
+                            self._put_cache(cache_key, filtered_resp)
+                            return filtered_resp
+                except Exception as e:
+                    logger.warning(f"AkShare 尝试失败，回退到通用搜索: {e}")
+        # === AkShare A-Share Intercept End ===
+
 
         logger.info(
             (
